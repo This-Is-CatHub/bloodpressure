@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blood Pressure Logger</title>
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+</head>
+
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+<div class="max-w-4xl w-full">
+
+<!-- LOGIN -->
+<div id="loginSection" class="bg-white p-6 rounded-2xl shadow">
+<h1 class="text-2xl font-bold mb-4 text-center">เข้าสู่ระบบ</h1>
+
+<input id="username" type="text" placeholder="Username" class="border rounded-xl p-2 w-full mb-3"/>
+
+<input id="password" type="password" placeholder="Password" class="border rounded-xl p-2 w-full mb-3"/>
+
+<button onclick="login()" class="w-full bg-blue-500 text-white py-2 rounded-xl">
+เข้าสู่ระบบ
+</button>
+
+<p class="text-center text-sm mt-3 text-gray-500">
+(ระบบจะสมัครสมาชิกอัตโนมัติถ้ายังไม่มีบัญชี)
+</p>
+
+</div>
+
+<!-- APP -->
+<div id="appSection" class="hidden">
+
+<div class="flex justify-between items-center mb-4">
+<h1 class="text-2xl font-bold">
+บันทึกความดัน : <span id="currentUser"></span>
+</h1>
+
+<button onclick="logout()" class="text-red-500">
+ออกจากระบบ
+</button>
+</div>
+
+<!-- FORM -->
+<div class="bg-white p-4 rounded-2xl shadow mb-6">
+
+<div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+<input id="date" type="datetime-local" class="border rounded-xl p-2"/>
+
+<input id="sys" type="number" placeholder="SYS" class="border rounded-xl p-2"/>
+
+<input id="dia" type="number" placeholder="DIA" class="border rounded-xl p-2"/>
+
+<input id="pulse" type="number" placeholder="Pulse" class="border rounded-xl p-2"/>
+
+</div>
+
+<button onclick="addRecord()" class="mt-4 w-full bg-green-500 text-white py-2 rounded-xl">
+บันทึก
+</button>
+
+<p id="warning" class="text-red-500 mt-2 font-semibold"></p>
+
+</div>
+
+<!-- HISTORY -->
+<div class="bg-white p-4 rounded-2xl shadow">
+
+<div class="flex justify-between items-center mb-3">
+
+<h2 class="font-semibold">ประวัติย้อนหลัง</h2>
+
+<div class="flex gap-3">
+
+<button onclick="exportExcel()" class="text-green-600 text-sm">
+Export Excel
+</button>
+
+<button onclick="exportPDF()" class="text-blue-600 text-sm">
+Export PDF
+</button>
+
+<button onclick="clearAll()" class="text-red-500 text-sm">
+ล้างข้อมูล
+</button>
+
+</div>
+
+</div>
+
+<div class="overflow-x-auto">
+
+<table class="w-full text-center">
+
+<thead>
+
+<tr class="bg-gray-200">
+
+<th class="p-2">วันที่</th>
+<th class="p-2">SYS</th>
+<th class="p-2">DIA</th>
+<th class="p-2">Pulse</th>
+
+</tr>
+
+</thead>
+
+<tbody id="history"></tbody>
+
+</table>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+<script>
+
+// LOGIN SYSTEM
+function login(){
+
+const username = document.getElementById('username').value.trim();
+const password = document.getElementById('password').value.trim();
+
+if(!username || !password){
+return alert("กรอก Username และ Password");
+}
+
+let users = JSON.parse(localStorage.getItem("users") || "{}");
+
+if(users[username]){
+
+if(users[username] !== password){
+return alert("Password ไม่ถูกต้อง");
+}
+
+}else{
+
+users[username] = password;
+localStorage.setItem("users", JSON.stringify(users));
+
+}
+
+localStorage.setItem("currentUser", username);
+
+document.getElementById("currentUser").innerText = username;
+
+document.getElementById("loginSection").classList.add("hidden");
+document.getElementById("appSection").classList.remove("hidden");
+
+render();
+
+}
+
+function logout(){
+
+localStorage.removeItem("currentUser");
+location.reload();
+
+}
+
+function getUser(){
+return localStorage.getItem("currentUser");
+}
+
+function getData(){
+
+const user = getUser();
+
+return JSON.parse(localStorage.getItem("bpData_"+user) || "[]");
+
+}
+
+function saveData(data){
+
+const user = getUser();
+
+localStorage.setItem("bpData_"+user, JSON.stringify(data));
+
+}
+
+// ADD RECORD
+function addRecord(){
+
+const sys = parseInt(document.getElementById("sys").value);
+const dia = parseInt(document.getElementById("dia").value);
+const pulse = parseInt(document.getElementById("pulse").value);
+
+if(!sys || !dia || !pulse){
+return alert("กรอกข้อมูลให้ครบ");
+}
+
+const record = {
+
+date : document.getElementById("date").value ?
+new Date(document.getElementById("date").value).toLocaleString()
+: new Date().toLocaleString(),
+
+sys,
+dia,
+pulse
+
+};
+
+const data = getData();
+
+data.push(record);
+
+saveData(data);
+
+checkWarning(sys,dia);
+
+render();
+
+document.getElementById("sys").value="";
+document.getElementById("dia").value="";
+document.getElementById("pulse").value="";
+document.getElementById("date").value="";
+
+}
+
+function checkWarning(sys,dia){
+
+const warning = document.getElementById("warning");
+
+if(sys >= 140 || dia >= 90){
+
+warning.innerText = "⚠ ความดันสูงกว่าปกติ";
+
+}else{
+
+warning.innerText = "";
+
+}
+
+}
+
+// DELETE ALL
+function clearAll(){
+
+if(confirm("ลบข้อมูลทั้งหมด?")){
+
+const user = getUser();
+
+localStorage.removeItem("bpData_"+user);
+
+render();
+
+}
+
+}
+
+// RENDER TABLE
+function render(){
+
+const tbody = document.getElementById("history");
+
+tbody.innerHTML="";
+
+const data = getData();
+
+data.forEach(r=>{
+
+tbody.innerHTML += `
+
+<tr class="border-b">
+
+<td class="p-2">${r.date}</td>
+<td class="p-2">${r.sys}</td>
+<td class="p-2">${r.dia}</td>
+<td class="p-2">${r.pulse}</td>
+
+</tr>
+
+`;
+
+});
+
+}
+
+// EXPORT
+function exportExcel(){
+
+const data = getData();
+
+const ws = XLSX.utils.json_to_sheet(data);
+
+const wb = XLSX.utils.book_new();
+
+XLSX.utils.book_append_sheet(wb, ws, "BP");
+
+XLSX.writeFile(wb,"blood_pressure.xlsx");
+
+}
+
+async function exportPDF(){
+
+const { jsPDF } = window.jspdf;
+
+const doc = new jsPDF();
+
+const data = getData();
+
+let y = 10;
+
+doc.text("Blood Pressure Records",10,y);
+
+y += 10;
+
+data.forEach(r=>{
+
+doc.text(`${r.date} SYS:${r.sys} DIA:${r.dia} P:${r.pulse}`,10,y);
+
+y += 8;
+
+});
+
+doc.save("blood_pressure.pdf");
+
+}
+
+// AUTO LOGIN
+window.onload = function(){
+
+const user = getUser();
+
+if(user){
+
+document.getElementById("currentUser").innerText = user;
+
+document.getElementById("loginSection").classList.add("hidden");
+
+document.getElementById("appSection").classList.remove("hidden");
+
+render();
+
+}
+
+}
+
+</script>
+
+</body>
+</html>
